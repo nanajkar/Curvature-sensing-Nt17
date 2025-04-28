@@ -247,7 +247,45 @@ def dip_pep_lip_contacts(df, traj_files):
         tpr, xtc = traj_files[traj_idx]
         u = Universe(tpr, xtc)
         prot = u.select_atoms("name BBp BBm")
-        lip = u.select_atoms("resname POPC and name GL1 GL2")
+        lip = u.select_atoms("resname POPC")
+        num_peptides = 36
+        pep_len = len(prot) // num_peptides
+        assert len(prot) % num_peptides == 0, "Peptide division mismatch."
+
+        all_peptides = [prot[i * pep_len : (i + 1) * pep_len] for i in range(num_peptides)]
+        
+        frames_to_check = group["frame"].unique()
+        peptide_lookup = group.groupby("frame")["local_pep_ID"].apply(list).to_dict()
+        # Considering all peptides that may be interating with the membrane, not just direct interactions
+        for ts in u.trajectory:
+            if ts.frame not in frames_to_check:
+                continue
+            active_peptides = peptide_lookup[ts.frame]
+            for i in active_peptides:
+                peptide_i = all_peptides[i]
+                
+                d_pp = distance_array(peptide_i.positions, lip.positions, box=u.dimensions)
+                count = (d_pp < 3.5).sum()
+
+                contact_records.append({
+                    'trajectory': traj_idx,
+                    'frame': ts.frame,
+                    'local_pep_ID': i,
+                    'dip_lp_contacts': count
+                })
+
+    return pd.DataFrame(contact_records)
+
+
+def hyd_pep_lip_contacts(df, traj_files)->pd.DataFrame:
+
+    contact_records = []
+
+    for traj_idx, group in df.groupby("trajectory"):
+        tpr, xtc = traj_files[traj_idx]
+        u = Universe(tpr, xtc)
+        prot = u.select_atoms("resname PHE ILE LEU VAL MET and name S1 S2 S3")
+        lip = u.select_atoms("resname POPC and name C* D*")
         num_peptides = 36
         pep_len = len(prot) // num_peptides
         assert len(prot) % num_peptides == 0, "Peptide division mismatch."
@@ -271,7 +309,81 @@ def dip_pep_lip_contacts(df, traj_files):
                     'trajectory': traj_idx,
                     'frame': ts.frame,
                     'local_pep_ID': i,
-                    'dip_lp_contacts': count
+                    'hyd_lp_contacts': count
+                })
+
+    return pd.DataFrame(contact_records)
+
+def Ppep_Nlip_contacts(df, traj_files)->pd.DataFrame:
+
+    contact_records = []
+
+    for traj_idx, group in df.groupby("trajectory"):
+        tpr, xtc = traj_files[traj_idx]
+        u = Universe(tpr, xtc)
+        prot = u.select_atoms("resname LYS ARG and name S2")
+        lip = u.select_atoms("resname POPC and name PO4")
+        num_peptides = 36
+        pep_len = len(prot) // num_peptides
+        assert len(prot) % num_peptides == 0, "Peptide division mismatch."
+
+        all_peptides = [prot[i * pep_len : (i + 1) * pep_len] for i in range(num_peptides)]
+        
+        frames_to_check = group["frame"].unique()
+        peptide_lookup = group.groupby("frame")["local_pep_ID"].apply(list).to_dict()
+        # Considering all peptides that may be interating with the membrane, not just direct interactions
+        for ts in u.trajectory:
+            if ts.frame not in frames_to_check:
+                continue
+            active_peptides = peptide_lookup[ts.frame]
+            for i in active_peptides:
+                peptide_i = all_peptides[i]
+                
+                d_pp = distance_array(peptide_i.positions, lip.positions, box=u.dimensions)
+                count = (d_pp < 7.0).sum()
+
+                contact_records.append({
+                    'trajectory': traj_idx,
+                    'frame': ts.frame,
+                    'local_pep_ID': i,
+                    'Ppep_Nlip_contacts': count
+                })
+
+    return pd.DataFrame(contact_records)
+
+def Npep_Plip_contacts(df, traj_files)->pd.DataFrame:
+
+    contact_records = []
+
+    for traj_idx, group in df.groupby("trajectory"):
+        tpr, xtc = traj_files[traj_idx]
+        u = Universe(tpr, xtc)
+        prot = u.select_atoms("resname ASP GLU and name S2")
+        lip = u.select_atoms("resname POPC and name NC3")
+        num_peptides = 36
+        pep_len = len(prot) // num_peptides
+        assert len(prot) % num_peptides == 0, "Peptide division mismatch."
+
+        all_peptides = [prot[i * pep_len : (i + 1) * pep_len] for i in range(num_peptides)]
+        
+        frames_to_check = group["frame"].unique()
+        peptide_lookup = group.groupby("frame")["local_pep_ID"].apply(list).to_dict()
+        # Considering all peptides that may be interating with the membrane, not just direct interactions
+        for ts in u.trajectory:
+            if ts.frame not in frames_to_check:
+                continue
+            active_peptides = peptide_lookup[ts.frame]
+            for i in active_peptides:
+                peptide_i = all_peptides[i]
+                
+                d_pp = distance_array(peptide_i.positions, lip.positions, box=u.dimensions)
+                count = (d_pp < 7.0).sum()
+
+                contact_records.append({
+                    'trajectory': traj_idx,
+                    'frame': ts.frame,
+                    'local_pep_ID': i,
+                    'Npep_Plip_contacts': count
                 })
 
     return pd.DataFrame(contact_records)
