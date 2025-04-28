@@ -195,7 +195,7 @@ def pep_lip_contacts(df, traj_files):
 
     return pd.DataFrame(contact_records)
 
-def pep_dip_dip_contacts(df, traj_files):
+def dip_pep_pep_contacts(df, traj_files):
 
     contact_records = []
 
