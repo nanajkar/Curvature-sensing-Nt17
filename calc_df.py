@@ -387,3 +387,65 @@ def Npep_Plip_contacts(df, traj_files)->pd.DataFrame:
                 })
 
     return pd.DataFrame(contact_records)
+
+def _create_membrane_surface(PO4_positions:np.array)->Tuple[scipy.spatial.KDTree,np.array]: 
+    """
+    Constructs an interpolated membrane surface from PO4 positions
+    """
+    # Assuming the membrane is roughly parallel to the XY plane
+    x = PO4_positions[:, 0]
+    y = PO4_positions[:, 1]
+    z = PO4_positions[:, 2]
+    
+    # Create a grid to interpolate the membrane surface
+    xi, yi = np.linspace(x.min(), x.max(), 100), np.linspace(y.min(), y.max(), 100)
+    xi, yi = np.meshgrid(xi, yi)
+    
+    # Interpolate to get a smooth surface
+    zi = griddata((x, y), z, (xi, yi), method='cubic')
+    zi = np.nan_to_num(zi, nan=0.0, posinf=np.max(z), neginf=np.min(z))
+    membrane_surface_points = np.c_[xi.ravel(), yi.ravel(), zi.ravel()]
+    kdtree = KDTree(membrane_surface_points)
+    
+    return kdtree, membrane_surface_points
+
+def _calculate_insertion_depth(molecule_positions, kdtree, membrane_surface_points)->np.float:
+    """
+    Calculate the minimum insertion depth(A) of a molecule relative to the membrane surface.
+    """
+    distances = []
+    for pos in molecule_positions:
+        _, idx = kdtree.query(pos)
+        nearest_surface_point = membrane_surface_points[idx]
+        distance = np.linalg.norm(pos - nearest_surface_point)
+        distances.append(distance)
+    return np.min(distances)
+    
+    
+def get_separation_per_pep(files,current_peptide)->pd.DataFrame:
+
+    tpr = files[0];xtc = files[1]
+    u = Universe(tpr,xtc)
+    record = []
+    
+    # Selections 
+    prot = u.select_atoms('name BB S1 S2 S3')
+    num_peptides = 36
+    pep_len = len(prot) // num_peptides
+    assert len(prot) % num_peptides == 0, "Peptide division mismatch."
+    po4 = u.select_atoms('resname POPC and name PO4')
+    all_peptides = [prot[i * pep_len : (i + 1) * pep_len] for i in range(num_peptides)]
+
+    for ts in u.trajectory[:5001]:
+        # Generate membrane surface
+        po4_pos = po4.positions
+        grid, membrane_surface_points = _create_membrane_surface(po4_pos)
+        # Calculate min distance between peptide of interest beads and 
+        # the membrane surface
+        min_dist = _calculate_insertion_depth(all_peptides[current_peptide].positions,
+                                            grid,
+                                            membrane_surface_points)
+
+        record.append(min_dist)
+        
+    return record
