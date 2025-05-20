@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from MDAnalysis import Universe
 from MDAnalysis.analysis.distances import distance_array
+import networkx as nx
 
 def _isincircle(point, center, radius):
 	## Given the x and y coords, checks if a bead is within the curved region
@@ -91,16 +92,7 @@ def pep_pep_contacts(df, traj_files):
     return pd.DataFrame(contact_records)
 
 
-def build_init_df(tpr, xtc, traj_index, start=0, stop=None)->pd.DataFrame:
-    """
-    Analyze membrane interactions for a given trajectory.
-    OP: Returns a template df contacting the following:
-    global_pep_ID   --> peptide count across replicas
-    local_pep_ID --> ranges from 0-35
-    frame --> from 0:5000
-    trajectory 
-    target_status --> ranges from 0-3
-    """
+def build_init_df(tpr, xtc, traj_index, start=0, stop=None) -> pd.DataFrame:
     u = Universe(tpr, xtc)
     po4 = u.select_atoms('name PO4')
     prot = u.select_atoms('name BB S1 S2 S3 S4')
@@ -117,7 +109,8 @@ def build_init_df(tpr, xtc, traj_index, start=0, stop=None)->pd.DataFrame:
 
         peptide_status = {}
 
-        # First pass: direct lipid contacts
+        # Step 1: Identify direct membrane contacts
+        direct_membrane_peptides = set()
         for i, peptide in enumerate(peptides):
             d_curved = distance_array(peptide.positions, curved_po4.positions, box=u.dimensions)
             d_planar = distance_array(peptide.positions, planar_po4.positions, box=u.dimensions)
@@ -125,36 +118,53 @@ def build_init_df(tpr, xtc, traj_index, start=0, stop=None)->pd.DataFrame:
             n_planar = (d_planar < 7.0).sum()
 
             if n_curved >= 5:
-                peptide_status[i] = 0  # direct curved contact
+                peptide_status[i] = 0
+                direct_membrane_peptides.add(i)
             elif n_planar >= 5:
-                peptide_status[i] = 1  # direct planar contact
+                peptide_status[i] = 1
+                direct_membrane_peptides.add(i)
             else:
-                peptide_status[i] = -1  # undecided status
+                peptide_status[i] = -1  # undecided for now, could be class (2/3/solution peptides)
 
-        # Second pass: indirect via peptide-peptide contacts
-        for i, peptide in enumerate(peptides):
-            if peptide_status[i] == -1:
-                for j, other_peptide in enumerate(peptides):
-                    if peptide_status[j] in [0, 1] and i != j:
-                        d_pp = distance_array(peptide.positions, other_peptide.positions, box=u.dimensions)
-                        if (d_pp < 7.0).sum() >= 5:
-                            peptide_status[i] = 2 if peptide_status[j] == 0 else 3
-                            break
-
-         # Store results (only keep peptides with a defined target_status)
+        # Step 2: Build peptide-peptide interaction graph
+        contact_graph = nx.Graph()
+        contact_graph.add_nodes_from(range(num_peptides))
         for i in range(num_peptides):
-            if peptide_status[i] == -1:
-                continue  # skip unclassified peptides
+            for j in range(i + 1, num_peptides):
+                d_pp = distance_array(peptides[i].positions, peptides[j].positions, box=u.dimensions)
+                if (d_pp < 7.0).sum() >= 5:
+                    contact_graph.add_edge(i, j)
 
+        # Step 3: Propagate indirect labels
+        for component in nx.connected_components(contact_graph):
+            # Check if any peptide in this component is directly bound
+            direct_in_component = direct_membrane_peptides.intersection(component)
+            if direct_in_component:
+                # Assign class 2 or 3 based on which direct peptide is closest
+                for pid in component:
+                    if peptide_status[pid] in [0, 1]:
+                        continue  # already assigned
+                    # Pick closest direct peptide
+                    for ref_id in direct_in_component:
+                        ref_class = peptide_status[ref_id]
+                        if ref_class == 0:
+                            peptide_status[pid] = 2
+                        elif ref_class == 1:
+                            peptide_status[pid] = 3
+                        break  # Assign first match and break
+
+        # Step 4: Record peptides with assigned class
+        for i in range(num_peptides):
+            if peptide_status[i] == -1: # -1 being peptides in solution
+                continue  # skip unclassified (solution)
             global_id = traj_index * num_peptides + i
             records.append({
-                'global_pep_ID': global_id,       # global unique ID
-                'local_pep_ID': i,            # local 0–35 index
+                'global_pep_ID': global_id,
+                'local_pep_ID': i,
                 'frame': ts.frame,
                 'trajectory': traj_index,
                 'target_status': peptide_status[i]
             })
-
 
     return pd.DataFrame(records)
 

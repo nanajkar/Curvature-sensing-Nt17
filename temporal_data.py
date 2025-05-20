@@ -13,7 +13,7 @@ Functions that calculate temporal values for the df
 """
 
 
-def _create_membrane_surface(PO4_positions:np.array)->Tuple[scipy.spatial.KDTree,np.array]: 
+def _create_membrane_surface(PO4_positions:np.array): 
     """
     Constructs an interpolated membrane surface from PO4 positions
     """
@@ -34,7 +34,7 @@ def _create_membrane_surface(PO4_positions:np.array)->Tuple[scipy.spatial.KDTree
     
     return kdtree, membrane_surface_points
 
-def _calculate_insertion_depth(molecule_positions, kdtree, membrane_surface_points)->np.float:
+def _calculate_insertion_depth(molecule_positions, kdtree, membrane_surface_points)->np.float64:
     """
     Calculate the minimum insertion depth(A) of a molecule relative to the membrane surface.
     """
@@ -52,7 +52,7 @@ def calc_separation_values(df, traj_files)->pd.DataFrame:
     records = []
     for traj_idx, group in df.groupby("trajectory"):
         pep_of_interest = group['local_pep_ID'].unique()
-        tpr, xtc = file_pairs[traj_idx]
+        tpr, xtc = traj_files[traj_idx]
         u = Universe(tpr, xtc)
         
         prot = u.select_atoms('name BB S1 S2 S3')
